@@ -47,7 +47,7 @@ class CircleGame:
             self.sound_glup = self.sound_boom = None
 
         self.font = pygame.font.SysFont("Arial", 22, bold=True)
-        self.big_font = pygame.font.SysFont("Arial", 50, bold=True)
+        self.big_font = pygame.font.SysFont("Arial", 60, bold=True)
         self.clock = pygame.time.Clock()
         self.state = "START"
         self.reset_game()
@@ -55,24 +55,23 @@ class CircleGame:
     def reset_game(self):
         self.score = 0
         self.lives = 3
-        self.time_left = 30.0  # Sure 30'dan basliyor
+        self.time_left = 30.0
         self.combo = 0
-        self.blue_hit_count = 0 
         self.circles = []
         self.particles = []
         self.spawn_timer = 0
-        self.freeze_timer = 0 # Zaman durdurma mekanigini yonetir
+        self.combo_msg_timer = 0 # Yazinin ekranda kalma suresi
 
     def spawn_circle(self):
         x = random.randint(60, WIDTH - 60)
         y = random.randint(80, HEIGHT - 60)
         rand = random.random()
         
-        if rand < 0.05: # %5 Altin
+        if rand < 0.05:
             color, c_type = GOLD, "GOLD"
-        elif rand < 0.25: # %20 Yesil
+        elif rand < 0.25:
             color, c_type = GREEN, "BAD"
-        else: # %75 Mavi
+        else:
             color, c_type = BLUE, "GOOD"
             
         self.circles.append({'pos': (x, y), 'color': color, 'type': c_type, 'time': pygame.time.get_ticks()})
@@ -80,19 +79,18 @@ class CircleGame:
     def update_logic(self, dt):
         if self.state != "PLAYING": return
 
-        # Zaman Durdurma Kontrolu
-        if self.freeze_timer > 0:
-            self.freeze_timer -= dt
-        else:
-            self.time_left -= dt
-
+        self.time_left -= dt
         if self.time_left <= 0 or self.lives <= 0:
+            self.time_left = 0
             self.state = "GAMEOVER"
+
+        if self.combo_msg_timer > 0:
+            self.combo_msg_timer -= 1
 
         current_time = pygame.time.get_ticks()
         self.level = (self.score // 200) + 1
-        
         spawn_rate = max(250, 900 - (self.level * 60))
+        
         if current_time - self.spawn_timer > spawn_rate:
             self.spawn_circle()
             self.spawn_timer = current_time
@@ -110,26 +108,31 @@ class CircleGame:
         if self.state == "START":
             self.draw_center_text([
                 ("REFLEKS MASTER PRO", self.big_font, GOLD, -100),
-                ("Maviler: +10 Puan & Kombo", self.font, BLUE, -30),
-                ("Altin: Zamani Durdurur & Temizlik", self.font, GOLD, 10),
-                ("Her 5 Mavi: +3 Saniye Bonus!", self.font, WHITE, 50),
+                ("Maviler: +10 Puan & Combo", self.font, BLUE, -30),
+                ("Altin: Temizlik & +5 Saniye", self.font, GOLD, 10),
+                ("5 Combo: +3 Saniye Bonus!", self.font, WHITE, 50),
                 ("BASLAMAK ICIN TIKLA", self.font, RED, 120)
             ])
         elif self.state == "PLAYING":
             # HUD
             s_txt = self.font.render(f"SKOR: {self.score}", True, WHITE)
-            t_color = GOLD if self.freeze_timer > 0 else (RED if self.time_left < 5 else WHITE)
-            t_txt = self.font.render(f"SURE: {max(0, int(self.time_left))}s {'(DONDU)' if self.freeze_timer > 0 else ''}", True, t_color)
+            t_txt = self.font.render(f"SURE: {int(self.time_left)}s", True, RED if self.time_left < 5 else WHITE)
             c_txt = self.font.render(f"COMBO: {self.combo}", True, GOLD if self.combo >= 5 else WHITE)
             
             self.screen.blit(s_txt, (20, 20))
-            self.screen.blit(t_txt, (WIDTH//2 - 60, 20))
+            self.screen.blit(t_txt, (WIDTH//2 - 40, 20))
             self.screen.blit(c_txt, (WIDTH - 150, 20))
 
             for c in self.circles:
                 pygame.draw.circle(self.screen, c['color'], c['pos'], 30)
                 pygame.draw.circle(self.screen, WHITE, c['pos'], 30, 2)
             for p in self.particles: p.draw(self.screen)
+
+            # COMBO YAZISI
+            if self.combo_msg_timer > 0:
+                msg = self.big_font.render("COMBO!", True, GOLD)
+                rect = msg.get_rect(center=(WIDTH//2, HEIGHT//2))
+                self.screen.blit(msg, rect)
 
         elif self.state == "GAMEOVER":
             self.draw_center_text([
@@ -166,22 +169,21 @@ async def main():
                     hit_target = False
                     for c in game.circles[:]:
                         if math.hypot(c['pos'][0]-m_pos[0], c['pos'][1]-m_pos[1]) < 35:
-                            # Patlama Efekti
                             for _ in range(10): game.particles.append(Particle(c['pos'], c['color']))
                             
                             if c['type'] == "GOOD":
                                 game.score += 10
                                 game.combo += 1
-                                game.blue_hit_count += 1
                                 if game.sound_glup: game.sound_glup.play()
-                                # 5 Vurusta 3 Saniye Kurali
-                                if game.blue_hit_count % 5 == 0:
+                                # 5 Combo Kontrolu
+                                if game.combo > 0 and game.combo % 5 == 0:
                                     game.time_left += 3
+                                    game.combo_msg_timer = 30 # Yaklasik 0.5 saniye
                             elif c['type'] == "GOLD":
-                                game.freeze_timer = 5.0 # Zaman 5 saniye donar
+                                game.time_left += 5
                                 game.circles = [obj for obj in game.circles if obj['type'] != "BAD"]
                                 if game.sound_glup: game.sound_glup.play()
-                            else: # YESIL
+                            else:
                                 game.lives -= 1
                                 game.combo = 0
                                 if game.sound_boom: game.sound_boom.play()
