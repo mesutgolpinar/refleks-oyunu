@@ -40,14 +40,20 @@ class CircleGame:
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         pygame.display.set_caption("Refleks Master Pro")
         
+        # SES DOSYALARINI YUKLE
         try:
             self.sound_glup = pygame.mixer.Sound("glup.ogg")
             self.sound_boom = pygame.mixer.Sound("explosion.ogg")
+            self.sound_gold = pygame.mixer.Sound("gold.ogg")
+            # Arka plan muzigi icin music modulu daha uygundur
+            pygame.mixer.music.load("main.ogg")
         except:
-            self.sound_glup = self.sound_boom = None
+            print("Ses dosyalari eksik!")
+            self.sound_glup = self.sound_boom = self.sound_gold = None
 
-        self.font = pygame.font.SysFont("Arial", 22, bold=True)
-        self.big_font = pygame.font.SysFont("Arial", 60, bold=True)
+        self.font = pygame.font.SysFont("Arial", 24, bold=True)
+        self.combo_font = pygame.font.SysFont("Verdana", 80, bold=True) # Daha buyuk ve belirgin font
+        self.big_font = pygame.font.SysFont("Arial", 50, bold=True)
         self.clock = pygame.time.Clock()
         self.state = "START"
         self.reset_game()
@@ -60,11 +66,12 @@ class CircleGame:
         self.circles = []
         self.particles = []
         self.spawn_timer = 0
-        self.combo_msg_timer = 0 # Yazinin ekranda kalma suresi
+        self.combo_msg_timer = 0
+        pygame.mixer.music.stop() # Resetlendiginde muzigi durdur
 
     def spawn_circle(self):
         x = random.randint(60, WIDTH - 60)
-        y = random.randint(80, HEIGHT - 60)
+        y = random.randint(100, HEIGHT - 100)
         rand = random.random()
         
         if rand < 0.05:
@@ -83,6 +90,7 @@ class CircleGame:
         if self.time_left <= 0 or self.lives <= 0:
             self.time_left = 0
             self.state = "GAMEOVER"
+            pygame.mixer.music.fadeout(1000) # Oyun bitince muzigi yavasca kapat
 
         if self.combo_msg_timer > 0:
             self.combo_msg_timer -= 1
@@ -95,7 +103,7 @@ class CircleGame:
             self.spawn_circle()
             self.spawn_timer = current_time
 
-        duration = max(400, 1600 - (self.level * 120))
+        duration = max(450, 1600 - (self.level * 120))
         self.circles = [c for c in self.circles if current_time - c['time'] < duration]
 
         for p in self.particles[:]:
@@ -123,16 +131,20 @@ class CircleGame:
             self.screen.blit(t_txt, (WIDTH//2 - 40, 20))
             self.screen.blit(c_txt, (WIDTH - 150, 20))
 
+            # Daireleri Ciz
             for c in self.circles:
                 pygame.draw.circle(self.screen, c['color'], c['pos'], 30)
                 pygame.draw.circle(self.screen, WHITE, c['pos'], 30, 2)
+            
+            # Parçacık Efektlerini Ciz
             for p in self.particles: p.draw(self.screen)
 
-            # COMBO YAZISI
+            # COMBO YAZISI (En ust katmanda olması icin sonda ciziyoruz)
             if self.combo_msg_timer > 0:
-                msg = self.big_font.render("COMBO!", True, GOLD)
-                rect = msg.get_rect(center=(WIDTH//2, HEIGHT//2))
-                self.screen.blit(msg, rect)
+                # Hafif seffaflik efekti icin
+                combo_surf = self.combo_font.render("COMBO!", True, GOLD)
+                combo_rect = combo_surf.get_rect(center=(WIDTH//2, HEIGHT//2))
+                self.screen.blit(combo_surf, combo_rect)
 
         elif self.state == "GAMEOVER":
             self.draw_center_text([
@@ -164,26 +176,27 @@ async def main():
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if game.state == "START":
                     game.state = "PLAYING"
+                    pygame.mixer.music.play(-1) # Muzigi dongu halinde baslat
                 elif game.state == "PLAYING":
                     m_pos = event.pos
                     hit_target = False
                     for c in game.circles[:]:
+                        # Hitbox'u biraz genişlettik (Mobil uyumluluk için 35px)
                         if math.hypot(c['pos'][0]-m_pos[0], c['pos'][1]-m_pos[1]) < 35:
-                            for _ in range(10): game.particles.append(Particle(c['pos'], c['color']))
+                            for _ in range(12): game.particles.append(Particle(c['pos'], c['color']))
                             
                             if c['type'] == "GOOD":
                                 game.score += 10
                                 game.combo += 1
                                 if game.sound_glup: game.sound_glup.play()
-                                # 5 Combo Kontrolu
                                 if game.combo > 0 and game.combo % 5 == 0:
                                     game.time_left += 3
-                                    game.combo_msg_timer = 30 # Yaklasik 0.5 saniye
+                                    game.combo_msg_timer = 40 # Daha uzun sure ekranda kalır (yaklasik 0.7sn)
                             elif c['type'] == "GOLD":
                                 game.time_left += 5
                                 game.circles = [obj for obj in game.circles if obj['type'] != "BAD"]
-                                if game.sound_glup: game.sound_glup.play()
-                            else:
+                                if game.sound_gold: game.sound_gold.play()
+                            else: # YESIL
                                 game.lives -= 1
                                 game.combo = 0
                                 if game.sound_boom: game.sound_boom.play()
@@ -196,6 +209,7 @@ async def main():
             if event.type == pygame.KEYDOWN and game.state == "GAMEOVER" and event.key == pygame.K_r:
                 game.reset_game()
                 game.state = "PLAYING"
+                pygame.mixer.music.play(-1)
 
         game.update_logic(dt)
         game.draw()
